@@ -30,11 +30,42 @@ export default function HomePage() {
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
+  // Handle hardware & browser back button gracefully for open modals
   useEffect(() => {
     if (!isLoading && !user) {
       router.replace('/login');
     }
   }, [user, isLoading, router]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isSettingsOpen) {
+        setIsSettingsOpen(false);
+      } else if (isInviteOpen) {
+        setIsInviteOpen(false);
+      } else if (isLogoutConfirmOpen) {
+        setIsLogoutConfirmOpen(false);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isSettingsOpen, isInviteOpen, isLogoutConfirmOpen]);
+
+  const openSettings = () => {
+    window.history.pushState({ modal: 'settings' }, '');
+    setIsSettingsOpen(true);
+  };
+
+  const openInvite = () => {
+    window.history.pushState({ modal: 'invite' }, '');
+    setIsInviteOpen(true);
+  };
+
+  const openLogoutConfirm = () => {
+    window.history.pushState({ modal: 'logout' }, '');
+    setIsLogoutConfirmOpen(true);
+  };
 
   const allMessages = useMemo(() => {
     return [...feedMessages].reverse().map((m) => ({
@@ -100,7 +131,7 @@ export default function HomePage() {
               {/* Invite button */}
               <button
                 type="button"
-                onClick={() => setIsInviteOpen(true)}
+                onClick={openInvite}
                 className="p-1.5 text-[#8A99AD] hover:text-[#F0F4F8] hover:bg-[#141C28] rounded-md transition-colors cursor-pointer"
                 title="Invite someone"
               >
@@ -109,7 +140,7 @@ export default function HomePage() {
 
               <button
                 type="button"
-                onClick={() => setIsSettingsOpen(true)}
+                onClick={openSettings}
                 className="p-1.5 text-[#8A99AD] hover:text-[#F0F4F8] hover:bg-[#141C28] rounded-md transition-colors cursor-pointer"
                 title="Settings & About"
               >
@@ -118,7 +149,7 @@ export default function HomePage() {
 
               <button
                 type="button"
-                onClick={() => setIsLogoutConfirmOpen(true)}
+                onClick={openLogoutConfirm}
                 className="flex items-center gap-1 text-xs text-[#8A99AD] hover:text-rose-400 px-2.5 py-1.5 rounded-md hover:bg-[#141C28] transition-colors cursor-pointer"
                 title="Log out"
               >
