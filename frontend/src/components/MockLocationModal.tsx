@@ -79,7 +79,7 @@ export const MockLocationModal: React.FC<MockLocationModalProps> = ({ isOpen, on
             Quick City Hubs (Click to teleport)
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {LOCATION_PRESETS.map((preset) => {
+            {LOCATION_PRESETS.map((preset: (typeof LOCATION_PRESETS)[0]) => {
               const isCurrent =
                 location.cityName === preset.name ||
                 (location.latitude &&

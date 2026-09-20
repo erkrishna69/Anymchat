@@ -22,7 +22,11 @@ export function InviteModal({ isOpen, onClose }: InviteModalProps) {
       .then((res) => {
         if (res.success) {
           setReferralCode(res.referralCode);
-          setInviteUrl(res.inviteUrl);
+          const origin = typeof window !== 'undefined' ? window.location.origin : '';
+          const fullUrl = origin
+            ? `${origin}/invite/${res.referralCode}`
+            : res.inviteUrl;
+          setInviteUrl(fullUrl);
         }
       })
       .catch(() => {})

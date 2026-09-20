@@ -14,8 +14,16 @@ interface LocationContextType {
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
 
 // Quick preset locations for easy testing
-
-
+export const LOCATION_PRESETS = [
+  { name: 'Connaught Place, Delhi', lat: 28.6315, lng: 77.2167 },
+  { name: 'Hauz Khas Village, Delhi', lat: 28.5535, lng: 77.1945 },
+  { name: 'Bandra West, Mumbai', lat: 19.0596, lng: 72.8295 },
+  { name: 'Indiranagar, Bangalore', lat: 12.9784, lng: 77.6408 },
+  { name: 'Koramangala, Bangalore', lat: 12.9352, lng: 77.6245 },
+  { name: 'Cyber City, Gurgaon', lat: 28.4952, lng: 77.0895 },
+  { name: 'Times Square, New York', lat: 40.7580, lng: -73.9855 },
+  { name: 'Soho, London', lat: 51.5136, lng: -0.1365 },
+];
 
 const LOCATION_CACHE_KEY = 'anym_last_location';
 const LOCATION_CACHE_TTL_MS = 60 * 60 * 1000; // 1 Hour TTL for local UI hint cache

@@ -1,7 +1,7 @@
 import { ReferralRepository } from '../../repositories/referral/referral.repository';
 import { ENV } from '../../config/env/env.config';
 
-const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3001').replace(/\/$/, '');
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.FRONTEND_URL || 'https://anymchat.kxoproduction.in').replace(/\/$/, '');
 
 export class ReferralService {
   /** Get or create a referral code for a user */
