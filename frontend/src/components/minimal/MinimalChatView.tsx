@@ -110,14 +110,15 @@ export const MinimalChatView: React.FC<MinimalChatViewProps> = ({
         !latestMessage.isSelf &&
         latestMessage.replyTo &&
         currentUserAlias &&
+        latestMessage.replyTo.senderAlias &&
         (latestMessage.replyTo.senderAlias.toLowerCase() === currentUserAlias.toLowerCase() ||
           latestMessage.replyTo.senderAlias.toLowerCase() === 'you')
     );
 
     if (countDiff > 0 && isNewReplyToMe) {
       setActiveReplyToast({
-        senderAlias: latestMessage.senderAlias,
-        content: latestMessage.content,
+        senderAlias: latestMessage.senderAlias || 'Anonymous',
+        content: latestMessage.content || '',
         messageId: latestMessage.id,
       });
     }

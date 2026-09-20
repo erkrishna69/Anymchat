@@ -68,20 +68,46 @@ export default function HomePage() {
   };
 
   const allMessages = useMemo(() => {
-    return [...feedMessages].reverse().map((m) => ({
-      id: m.id,
-      senderId: m.senderAnonymousId,
-      senderAlias: m.senderAlias,
-      content: m.content,
-      replyTo: m.replyTo,
-      timestamp: new Date(m.createdAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      isSelf: m.senderAnonymousId === user?.anonymousId,
-      avatarId: m.avatarId || (m.senderAnonymousId === user?.anonymousId ? user?.avatarId : undefined),
-      senderGender: m.senderGender,
-    }));
+    return [...feedMessages].reverse().map((m) => {
+      let timeString = 'Just now';
+      try {
+        if (m?.createdAt) {
+          const d = new Date(m.createdAt);
+          if (!isNaN(d.getTime())) {
+            timeString = d.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+          }
+        }
+      } catch {
+        timeString = 'Just now';
+      }
+
+      return {
+        id: m?.id || `msg-${Date.now()}-${Math.random()}`,
+        senderId: m?.senderAnonymousId || 'anonymous',
+        senderAlias: m?.senderAlias || 'Anonymous',
+        content: m?.content || '',
+        replyTo: m?.replyTo
+          ? {
+              messageId: m.replyTo.messageId,
+              senderAlias: m.replyTo.senderAlias || 'Anonymous',
+              content: m.replyTo.content || '',
+            }
+          : undefined,
+        timestamp: timeString,
+        isSelf: Boolean(
+          m?.senderAnonymousId &&
+            user?.anonymousId &&
+            m.senderAnonymousId === user.anonymousId
+        ),
+        avatarId:
+          m?.avatarId ||
+          (m?.senderAnonymousId === user?.anonymousId ? user?.avatarId : undefined),
+        senderGender: m?.senderGender,
+      };
+    });
   }, [feedMessages, user]);
 
   const handleSendMessage = (

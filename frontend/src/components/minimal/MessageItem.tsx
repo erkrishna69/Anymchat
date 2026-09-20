@@ -39,6 +39,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     !message.isSelf &&
       message.replyTo &&
       currentUserAlias &&
+      message.replyTo.senderAlias &&
       (message.replyTo.senderAlias.toLowerCase() === currentUserAlias.toLowerCase() ||
         message.replyTo.senderAlias.toLowerCase() === 'you')
   );
@@ -122,7 +123,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           {/* Quoted Reply Block (if this message is replying to another message) */}
           {message.replyTo && (
             <div
-              onClick={() => onJumpToMessage?.(message.replyTo!.messageId)}
+              onClick={() => message.replyTo?.messageId && onJumpToMessage?.(message.replyTo.messageId)}
               className={`mb-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-l-2 text-[11px] transition-colors cursor-pointer group/quote max-w-md truncate shadow-sm ${
                 isReplyToMe
                   ? 'bg-[#0E2038] border-[#38BDF8] text-[#93C5FD] hover:bg-[#132A4A]'
@@ -132,10 +133,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             >
               <CornerDownRight className="w-3 h-3 text-[#38BDF8] shrink-0" />
               <span className="font-bold text-[#38BDF8] truncate">
-                {isReplyToMe ? 'Replying to You' : `@${message.replyTo.senderAlias}`}
+                {isReplyToMe ? 'Replying to You' : `@${message.replyTo.senderAlias || 'Anonymous'}`}
               </span>
               <span className="text-[#64748B] truncate">
-                {message.replyTo.content}
+                {message.replyTo.content || ''}
               </span>
             </div>
           )}

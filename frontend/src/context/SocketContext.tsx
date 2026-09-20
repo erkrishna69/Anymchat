@@ -40,7 +40,7 @@ interface SocketContextType {
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5050';
+const BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL;
 const FEED_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_FEED_MESSAGES = 200;
 const MAX_DIRECT_MESSAGES = 150;
@@ -56,24 +56,29 @@ function mergeFeedMessages(
   const cutoff24h = Date.now() - FEED_TTL_MS;
   const messageMap = new Map<string, IPublicFeedMessage>();
 
-  // Add existing items that satisfy 24h retention
-  for (const m of existing) {
-    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
-      messageMap.set(m.id, m);
-    }
-  }
+  const processMessage = (m: IPublicFeedMessage) => {
+    if (!m || !m.id) return;
+    const createdAtIso = m.createdAt || new Date().toISOString();
+    const parsedTime = new Date(createdAtIso).getTime();
+    const validTime = isNaN(parsedTime) ? Date.now() : parsedTime;
 
-  // Merge incoming items
-  for (const m of incoming) {
-    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
-      messageMap.set(m.id, m);
+    if (validTime >= cutoff24h) {
+      messageMap.set(m.id, {
+        ...m,
+        createdAt: isNaN(parsedTime) ? new Date(validTime).toISOString() : m.createdAt,
+      });
     }
-  }
+  };
+
+  for (const m of existing) processMessage(m);
+  for (const m of incoming) processMessage(m);
 
   // Sort descending: newest at index 0
-  const sorted = Array.from(messageMap.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  const sorted = Array.from(messageMap.values()).sort((a, b) => {
+    const tA = new Date(a.createdAt || 0).getTime() || 0;
+    const tB = new Date(b.createdAt || 0).getTime() || 0;
+    return tB - tA;
+  });
 
   return sorted.length > MAX_FEED_MESSAGES ? sorted.slice(0, MAX_FEED_MESSAGES) : sorted;
 }
@@ -88,22 +93,29 @@ function mergeDirectMessages(
   const cutoff24h = Date.now() - FEED_TTL_MS;
   const messageMap = new Map<string, IPublicDirectMessage>();
 
-  for (const m of existing) {
-    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
-      messageMap.set(m.id, m);
-    }
-  }
+  const processMessage = (m: IPublicDirectMessage) => {
+    if (!m || !m.id) return;
+    const createdAtIso = m.createdAt || new Date().toISOString();
+    const parsedTime = new Date(createdAtIso).getTime();
+    const validTime = isNaN(parsedTime) ? Date.now() : parsedTime;
 
-  for (const m of incoming) {
-    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
-      messageMap.set(m.id, m);
+    if (validTime >= cutoff24h) {
+      messageMap.set(m.id, {
+        ...m,
+        createdAt: isNaN(parsedTime) ? new Date(validTime).toISOString() : m.createdAt,
+      });
     }
-  }
+  };
+
+  for (const m of existing) processMessage(m);
+  for (const m of incoming) processMessage(m);
 
   // Sort ascending: oldest to newest
-  const sorted = Array.from(messageMap.values()).sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  const sorted = Array.from(messageMap.values()).sort((a, b) => {
+    const tA = new Date(a.createdAt || 0).getTime() || 0;
+    const tB = new Date(b.createdAt || 0).getTime() || 0;
+    return tA - tB;
+  });
 
   return sorted.length > MAX_DIRECT_MESSAGES ? sorted.slice(-MAX_DIRECT_MESSAGES) : sorted;
 }
