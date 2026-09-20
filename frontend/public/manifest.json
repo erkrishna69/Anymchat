@@ -1,5 +1,5 @@
 {
-  "name": "AnymChat - Hyperlocal Anonymous Chat",
+  "name": "AnymChat - Anonymous Chat",
   "short_name": "AnymChat",
   "description": "Proximity-based anonymous social network with 10 KM radius and Orbit AI guard.",
   "start_url": "/app",
@@ -8,14 +8,14 @@
   "theme_color": "#080B10",
   "icons": [
     {
-      "src": "/avatars/avatar-1.jpg",
+      "src": "/favicon.png",
       "sizes": "192x192",
-      "type": "image/jpeg"
+      "type": "image/png"
     },
     {
-      "src": "/avatars/avatar-1.jpg",
+      "src": "/logo.png",
       "sizes": "512x512",
-      "type": "image/jpeg"
+      "type": "image/png"
     }
   ]
 }

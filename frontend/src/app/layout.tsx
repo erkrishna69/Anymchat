@@ -22,6 +22,14 @@ export const metadata: Metadata = {
     "Talk anonymously with active people within 10 km. No rooms, no groups, no profiles. Pure proximity anonymous social network.",
   keywords: ["anonymous chat", "location chat", "nearby chat", "10 km radius", "privacy chat"],
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon.png", type: "image/png" },
+    ],
+    shortcut: "/favicon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
