@@ -5,7 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
 import { IPublicFeedMessage, IPublicDirectMessage, IPublicNearbyUser } from '../types';
-import { getAuthToken } from '../services/api';
+import { getAuthToken, ApiService } from '../services/api';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'offline';
 
@@ -195,8 +195,26 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         const next = [message, ...prev].filter(
           (m) => new Date(m.createdAt).getTime() >= cutoff24h
         );
-        return next.length > 150 ? next.slice(0, 150) : next;
+        return next.length > 200 ? next.slice(0, 200) : next;
       });
+    });
+
+    socket.on('feed:history', (data: { messages: IPublicFeedMessage[] }) => {
+      if (data && Array.isArray(data.messages)) {
+        const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+        setFeedMessages((prev) => {
+          const map = new Map<string, IPublicFeedMessage>();
+          prev.forEach((m) => map.set(m.id, m));
+          data.messages.forEach((m) => {
+            if (new Date(m.createdAt).getTime() >= cutoff24h) {
+              map.set(m.id, m);
+            }
+          });
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      }
     });
 
     socket.on('nearby:users', (data: { totalNearby: number; users: IPublicNearbyUser[] }) => {
@@ -260,6 +278,40 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
+  // Fetch persistent 24-hour feed history whenever location is ready or refreshed
+  useEffect(() => {
+    if (!user || location.latitude === null || location.longitude === null) return;
+
+    let isMounted = true;
+    ApiService.getNearbyFeed(location.latitude, location.longitude, location.radiusKm)
+      .then((res) => {
+        if (isMounted && res && res.data && Array.isArray(res.data.messages)) {
+          const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+          setFeedMessages((prev) => {
+            const map = new Map<string, IPublicFeedMessage>();
+            // Add existing state items first
+            prev.forEach((m) => map.set(m.id, m));
+            // Add API items
+            res.data.messages.forEach((m: IPublicFeedMessage) => {
+              if (new Date(m.createdAt).getTime() >= cutoff24h) {
+                map.set(m.id, m);
+              }
+            });
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('Initial feed fetch error:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, location.latitude, location.longitude, location.radiusKm]);
+
   // Sync location changes over socket
   useEffect(() => {
     if (socketRef.current && socketRef.current.connected) {
@@ -290,6 +342,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     setActiveDirectChatUser(targetUser);
     setDirectMessages([]);
     setIsPartnerTyping(false);
+
+    // Fetch persistent direct chat history with this user
+    ApiService.getChatHistory(targetUser.anonymousId)
+      .then((res) => {
+        if (res && res.data && Array.isArray(res.data)) {
+          setDirectMessages(res.data);
+        }
+      })
+      .catch((err) => {
+        console.warn('Direct chat history fetch error:', err);
+      });
   };
 
   const closeDirectChat = () => {

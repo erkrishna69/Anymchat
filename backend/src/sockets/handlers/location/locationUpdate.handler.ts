@@ -1,6 +1,7 @@
 import { Socket } from 'socket.io';
 import { LocationUpdatePayload } from '../../../types/socket/socketPayload.types';
 import { PresenceService } from '../../../services/presence/presence.service';
+import { FeedService } from '../../../services/feed/feed.service';
 import { SocketRegistry } from '../../registry/socketRegistry';
 import { DISTANCE_CONSTANTS } from '../../../constants/distance/distance.constants';
 import { SOCKET_EVENTS } from '../../../constants/events/socketEvents.constants';
@@ -72,6 +73,13 @@ export function handleLocationUpdate(socket: Socket, payload: LocationUpdatePayl
       totalNearby: nearbySessions.length,
       users: nearbyUsers,
     });
+
+    // Send latest persistent feed messages within 10 km to the connecting socket
+    FeedService.getNearbyFeed(session.anonymousId, latitude, longitude, effectiveRadius)
+      .then((messages) => {
+        socket.emit(SOCKET_EVENTS.FEED_HISTORY, { messages });
+      })
+      .catch(() => {});
 
     // Notify other nearby users that someone is active in the area
     SocketRegistry.broadcastNearbyPresenceUpdate(latitude, longitude, effectiveRadius);

@@ -26,15 +26,51 @@ export const LOCATION_PRESETS = [
 ];
 
 export function LocationProvider({ children }: { children: React.ReactNode }) {
-  const [location, setLocation] = useState<LocationState>({
-    latitude: null,
-    longitude: null,
-    radiusKm: 10,
-    isAllowed: false,
-    isDetecting: false,
-    error: null,
-    cityName: undefined,
+  const [location, setLocation] = useState<LocationState>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('anym_last_location');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.latitude && parsed.longitude) {
+            return {
+              latitude: parsed.latitude,
+              longitude: parsed.longitude,
+              radiusKm: parsed.radiusKm || 10,
+              isAllowed: true,
+              isDetecting: false,
+              error: null,
+              cityName: parsed.cityName || 'Last Known Location',
+            };
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return {
+      latitude: null,
+      longitude: null,
+      radiusKm: 10,
+      isAllowed: false,
+      isDetecting: false,
+      error: null,
+      cityName: undefined,
+    };
   });
+
+  const saveLocationToStorage = (lat: number, lng: number, rad: number, city?: string) => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(
+          'anym_last_location',
+          JSON.stringify({ latitude: lat, longitude: lng, radiusKm: rad, cityName: city })
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  };
 
   const syncBackend = useCallback(async (lat: number, lng: number, rad: number) => {
     try {
@@ -69,6 +105,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           error: null,
           cityName: 'Your Current Device GPS',
         }));
+        saveLocationToStorage(lat, lng, location.radiusKm, 'Your Current Device GPS');
         syncBackend(lat, lng, location.radiusKm);
       },
       (err) => {
@@ -76,9 +113,9 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         if (err.code === err.TIMEOUT) msg = 'Location request timed out.';
         setLocation((prev) => ({
           ...prev,
-          isAllowed: false,
+          isAllowed: prev.latitude !== null,
           isDetecting: false,
-          error: msg,
+          error: prev.latitude !== null ? null : msg,
         }));
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
@@ -86,13 +123,17 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   }, [location.radiusKm, syncBackend]);
 
   const setCustomRadius = (radius: number) => {
-    setLocation((prev) => ({ ...prev, radiusKm: radius }));
-    if (location.latitude && location.longitude) {
-      syncBackend(location.latitude, location.longitude, radius);
-    }
+    setLocation((prev) => {
+      if (prev.latitude && prev.longitude) {
+        saveLocationToStorage(prev.latitude, prev.longitude, radius, prev.cityName);
+        syncBackend(prev.latitude, prev.longitude, radius);
+      }
+      return { ...prev, radiusKm: radius };
+    });
   };
 
   const setMockLocation = (lat: number, lng: number, cityName: string) => {
+    saveLocationToStorage(lat, lng, location.radiusKm, cityName);
     setLocation((prev) => ({
       ...prev,
       latitude: lat,
