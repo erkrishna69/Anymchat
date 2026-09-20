@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, LOCATION_PRESETS } from '../../context/LocationContext';
 import { MapPin, Navigation, Compass, Loader2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -10,8 +10,22 @@ interface LocationBannerProps {
 
 export const LocationBanner: React.FC<LocationBannerProps> = ({ onLocationReady }) => {
   const { location, requestLocation, setMockLocation } = useLocation();
-  const [showSafariHelp, setShowSafariHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
+  const [platform, setPlatform] = useState<'ios' | 'android' | 'desktop'>('desktop');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && navigator?.userAgent) {
+      const ua = navigator.userAgent.toLowerCase();
+      if (/iphone|ipad|ipod/.test(ua)) {
+        setPlatform('ios');
+      } else if (/android/.test(ua)) {
+        setPlatform('android');
+      } else {
+        setPlatform('desktop');
+      }
+    }
+  }, []);
 
   // If location is already granted and coordinates exist, do not render banner
   if (location.latitude !== null && location.longitude !== null && location.isAllowed && !isDismissed) {
@@ -49,7 +63,7 @@ export const LocationBanner: React.FC<LocationBannerProps> = ({ onLocationReady 
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-semibold text-white tracking-wide">
-                {isDenied ? 'Location Access Blocked' : 'Enable 10 KM Nearby'}
+                {isDenied ? 'Location Access Blocked' : 'Enable 10 KM Nearby Radar'}
               </span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-950/80 text-sky-300 border border-sky-700/40">
                 10 km radius
@@ -57,7 +71,7 @@ export const LocationBanner: React.FC<LocationBannerProps> = ({ onLocationReady 
             </div>
             <p className="text-[#8A99AD] text-[11px] mt-0.5 leading-tight">
               {isDenied
-                ? 'Safari blocked location. Tap below or choose a city preset to chat anonymously.'
+                ? 'Location is blocked in browser settings. Tap Allow or pick a city preset below.'
                 : 'Connect with nearby anonymous people in real-time around your area.'}
             </p>
           </div>
@@ -65,7 +79,7 @@ export const LocationBanner: React.FC<LocationBannerProps> = ({ onLocationReady 
 
         {/* Right action buttons */}
         <div className="flex items-center gap-2 w-full md:w-auto shrink-0 justify-end flex-wrap">
-          {/* iOS Safari Direct Gesture Enable Button */}
+          {/* Direct Gesture Enable Button */}
           <button
             type="button"
             onClick={handleEnableClick}
@@ -85,15 +99,15 @@ export const LocationBanner: React.FC<LocationBannerProps> = ({ onLocationReady 
             )}
           </button>
 
-          {/* Toggle iOS Safari Help Button */}
+          {/* Toggle Device-Adaptive Help Button */}
           <button
             type="button"
-            onClick={() => setShowSafariHelp((prev) => !prev)}
+            onClick={() => setShowHelp((prev) => !prev)}
             className="px-2.5 py-2 rounded-xl bg-[#141F33] hover:bg-[#1A2A45] text-[#8A99AD] hover:text-[#F0F4F8] border border-white/5 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
-            title="iOS Safari Help"
+            title="How to allow location"
           >
-            <span>Safari Help</span>
-            {showSafariHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <span>{platform === 'ios' ? 'Safari Help' : platform === 'android' ? 'Android Help' : 'Help'}</span>
+            {showHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
         </div>
       </div>
@@ -116,24 +130,61 @@ export const LocationBanner: React.FC<LocationBannerProps> = ({ onLocationReady 
         ))}
       </div>
 
-      {/* iOS Safari Settings Help Drawer */}
-      {showSafariHelp && (
+      {/* Device-Specific Settings Help Drawer */}
+      {showHelp && (
         <div className="max-w-4xl mx-auto mt-2.5 p-3 rounded-xl bg-[#090F1A] border border-sky-900/40 text-[11px] text-[#8A99AD] space-y-1.5 animate-in fade-in duration-150">
-          <div className="font-semibold text-sky-400 flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5" />
-            <span>How to allow location in iOS Safari:</span>
-          </div>
-          <ol className="list-decimal list-inside space-y-1 text-[#94A3B8] pl-1">
-            <li>
-              Tap the <strong className="text-white">AA</strong> or <strong className="text-white">Page Settings</strong> icon in the Safari address bar.
-            </li>
-            <li>
-              Select <strong className="text-white">Website Settings</strong> &gt; <strong className="text-white">Location</strong> &gt; Set to <strong className="text-sky-300">Allow</strong> or <strong className="text-sky-300">Ask</strong>.
-            </li>
-            <li>
-              If still blocked, open iPhone <strong className="text-white">Settings</strong> &gt; <strong className="text-white">Privacy &amp; Security</strong> &gt; <strong className="text-white">Location Services</strong> &gt; <strong className="text-white">Safari Websites</strong> &gt; <strong className="text-sky-300">While Using the App</strong>.
-            </li>
-          </ol>
+          {platform === 'ios' ? (
+            <>
+              <div className="font-semibold text-sky-400 flex items-center gap-1.5">
+                <Compass className="w-3.5 h-3.5" />
+                <span>How to allow location in iOS Safari:</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-[#94A3B8] pl-1">
+                <li>
+                  Tap the <strong className="text-white">AA</strong> or <strong className="text-white">Page Settings</strong> icon in the Safari address bar.
+                </li>
+                <li>
+                  Select <strong className="text-white">Website Settings</strong> &gt; <strong className="text-white">Location</strong> &gt; Set to <strong className="text-sky-300">Allow</strong>.
+                </li>
+                <li>
+                  If still blocked, open iPhone <strong className="text-white">Settings</strong> &gt; <strong className="text-white">Privacy &amp; Security</strong> &gt; <strong className="text-white">Location Services</strong> &gt; <strong className="text-white">Safari Websites</strong> &gt; <strong className="text-sky-300">While Using the App</strong>.
+                </li>
+              </ol>
+            </>
+          ) : platform === 'android' ? (
+            <>
+              <div className="font-semibold text-sky-400 flex items-center gap-1.5">
+                <Compass className="w-3.5 h-3.5" />
+                <span>How to allow location on Android (Chrome):</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-[#94A3B8] pl-1">
+                <li>
+                  Tap the <strong className="text-white">Tune / Lock</strong> icon on the left of the website URL.
+                </li>
+                <li>
+                  Tap <strong className="text-white">Permissions</strong> &gt; Toggle <strong className="text-sky-300">Location to On</strong>.
+                </li>
+                <li>
+                  If still blocked, open phone <strong className="text-white">Settings</strong> &gt; <strong className="text-white">Apps</strong> &gt; <strong className="text-white">Chrome</strong> &gt; <strong className="text-white">Permissions</strong> &gt; <strong className="text-white">Location</strong> &gt; <strong className="text-sky-300">Allow while using app</strong>.
+                </li>
+              </ol>
+            </>
+          ) : (
+            <>
+              <div className="font-semibold text-sky-400 flex items-center gap-1.5">
+                <Compass className="w-3.5 h-3.5" />
+                <span>How to allow location on Desktop:</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-[#94A3B8] pl-1">
+                <li>
+                  Click the <strong className="text-white">Tune / Lock </strong> icon in your browser address bar.
+                </li>
+                <li>
+                  Toggle <strong className="text-sky-300">Location permission to Allow</strong> and reload the page.
+                </li>
+              </ol>
+            </>
+          )}
         </div>
       )}
     </div>
