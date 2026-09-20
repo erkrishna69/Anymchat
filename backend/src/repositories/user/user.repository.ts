@@ -63,8 +63,24 @@ export class UserRepository {
     if (getMongoConnectionStatus()) {
       try {
         return await UserModel.create(docData);
-      } catch (err) {
-        // fallback to memory
+      } catch (err: any) {
+        if (err.code === 11000) {
+          if (err.keyPattern?.email || err.message?.includes('email')) {
+            throw new Error('An account with this email already exists');
+          }
+          if (err.keyPattern?.referralCode || err.message?.includes('referralCode')) {
+            throw new Error('Referral code collision, please retry');
+          }
+          throw new Error('Account with these credentials already exists');
+        }
+        // only fallback to memory if database connection failed
+      }
+    }
+
+    // In-memory uniqueness check
+    for (const u of inMemoryUsers.values()) {
+      if (u.email && u.email.trim().toLowerCase() === normalizedEmail) {
+        throw new Error('An account with this email already exists');
       }
     }
 

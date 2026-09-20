@@ -190,6 +190,25 @@ async function runAudit() {
 
     assert(insert1.id === insert2.id, 'Duplicate send with same clientMessageId resolves to existing record without creating duplicate');
 
+    // -------------------------------------------------------------
+    // Test 7: Duplicate Email Signup Prevention Guard
+    // -------------------------------------------------------------
+    console.log('\n--- 7. Strict Unique Email Signup Guard ---');
+    const testEmail = `audit_${uuidv4().substring(0, 6)}@example.com`;
+    const signup1 = await AuthService.signup(testEmail, 'StrongPassword123!', 1, 'FirstUser');
+    assert(!!signup1.user && !!signup1.token, 'First signup with email succeeds');
+
+    let duplicateRejected = false;
+    let duplicateErrorMessage = '';
+    try {
+      await AuthService.signup(testEmail, 'AnotherPassword456!', 2, 'SecondUser');
+    } catch (err: any) {
+      duplicateRejected = true;
+      duplicateErrorMessage = err.message;
+    }
+
+    assert(duplicateRejected, 'Second signup with same email is strictly rejected', duplicateErrorMessage);
+
     console.log('\n================================================================');
     console.log(`AUDIT RESULTS: ${passed} PASSED | ${failed} FAILED`);
     console.log('================================================================\n');

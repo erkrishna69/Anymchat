@@ -210,9 +210,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [location.latitude, location.longitude, location.radiusKm, syncNearbyFeed]);
 
+  // Keep stable refs to avoid re-triggering socket connection effect
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  const syncNearbyFeedRef = useRef(syncNearbyFeed);
+  syncNearbyFeedRef.current = syncNearbyFeed;
+
   // Connect socket with robust auto-reconnection and network listeners
   useEffect(() => {
-    if (!user) return;
+    if (!user?.anonymousId) return;
 
     const token = getAuthToken();
     const socket = io(BACKEND_URL, {
@@ -235,13 +241,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setConnectionStatus('connected');
 
       // Immediately sync location on connection/reconnection
-      if (location.latitude !== null && location.longitude !== null) {
+      const loc = locationRef.current;
+      if (loc.latitude !== null && loc.longitude !== null) {
         socket.emit('location:update', {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          radiusKm: location.radiusKm,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          radiusKm: loc.radiusKm,
         });
-        syncNearbyFeed(location.latitude, location.longitude, location.radiusKm);
+        syncNearbyFeedRef.current(loc.latitude, loc.longitude, loc.radiusKm);
       }
     });
 
@@ -253,13 +260,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.io.on('reconnect', () => {
       setIsConnected(true);
       setConnectionStatus('connected');
-      if (location.latitude !== null && location.longitude !== null) {
+      const loc = locationRef.current;
+      if (loc.latitude !== null && loc.longitude !== null) {
         socket.emit('location:update', {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          radiusKm: location.radiusKm,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          radiusKm: loc.radiusKm,
         });
-        syncNearbyFeed(location.latitude, location.longitude, location.radiusKm);
+        syncNearbyFeedRef.current(loc.latitude, loc.longitude, loc.radiusKm);
       }
       // Re-sync direct chat if currently viewing one
       if (activeUserRef.current) {
@@ -369,7 +377,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       socket.disconnect();
     };
-  }, [user, syncNearbyFeed]);
+  }, [user?.anonymousId]);
 
   // Initial feed sync whenever location is ready/changed
   useEffect(() => {
