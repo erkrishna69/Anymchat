@@ -22,7 +22,7 @@ const ReferralEventSchema = new Schema<IReferralEventDocument>(
     },
     userId: { type: String, default: null },
     ipHash: { type: String, default: null },
-    timestamp: { type: Date, default: Date.now, index: true },
+    timestamp: { type: Date, default: Date.now },
   },
   { _id: true }
 );

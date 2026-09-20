@@ -56,4 +56,7 @@ export interface LocationState {
   isDetecting: boolean;
   error: string | null;
   cityName?: string;
+  source?: 'gps' | 'cached' | 'mock' | 'none';
+  cachedTimestamp?: number;
 }
+

@@ -45,8 +45,9 @@ const FeedMessageSchema = new Schema<IFeedMessageDocument>(
         required: true,
       },
     },
+    createdAt: { type: Date, default: Date.now },
   },
-  { timestamps: true }
+  { timestamps: { createdAt: false, updatedAt: true } }
 );
 
 FeedMessageSchema.index({ location: '2dsphere' });

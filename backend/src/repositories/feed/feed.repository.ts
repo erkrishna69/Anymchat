@@ -24,7 +24,9 @@ export class FeedRepository {
     };
     latitude: number;
     longitude: number;
+    createdAt?: Date;
   }): Promise<any> {
+    const createdAt = msg.createdAt || new Date();
     const doc = {
       senderAnonymousId: msg.senderAnonymousId,
       senderAlias: msg.senderAlias,
@@ -38,7 +40,7 @@ export class FeedRepository {
         type: 'Point',
         coordinates: [msg.longitude, msg.latitude], // GeoJSON [lng, lat]
       },
-      createdAt: new Date(),
+      createdAt,
     };
 
     let resultDoc: any = null;

@@ -11,14 +11,16 @@ export class DirectRepository {
     recipientAnonymousId: string;
     clientMessageId?: string;
     content: string;
+    createdAt?: Date;
   }): Promise<any> {
+    const createdAt = msg.createdAt || new Date();
     const doc = {
       senderAnonymousId: msg.senderAnonymousId,
       recipientAnonymousId: msg.recipientAnonymousId,
       clientMessageId: msg.clientMessageId,
       content: msg.content,
       isRead: false,
-      createdAt: new Date(),
+      createdAt,
     };
 
     if (getMongoConnectionStatus()) {

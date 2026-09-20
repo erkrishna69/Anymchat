@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
@@ -18,6 +18,7 @@ interface SocketContextType {
   activeDirectChatUser: IPublicNearbyUser | null;
   directMessages: IPublicDirectMessage[];
   isPartnerTyping: boolean;
+  isDirectLoading: boolean;
   socketError: string | null;
   isTimedOut: boolean;
   timeoutRemainingSec: number;
@@ -34,11 +35,78 @@ interface SocketContextType {
   setTyping: (isTyping: boolean) => void;
   removeMessageFromView: (messageId: string) => void;
   removeUserFromNearby: (anonymousId: string) => void;
+  refreshFeed: () => Promise<void>;
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5050';
+const FEED_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_FEED_MESSAGES = 200;
+const MAX_DIRECT_MESSAGES = 150;
+
+/**
+ * Deterministically merges and sorts feed messages by createdAt timestamp (newest first).
+ * Enforces strict deduplication by message ID and 24-Hour Ephemeral Retention.
+ */
+function mergeFeedMessages(
+  existing: IPublicFeedMessage[],
+  incoming: IPublicFeedMessage[]
+): IPublicFeedMessage[] {
+  const cutoff24h = Date.now() - FEED_TTL_MS;
+  const messageMap = new Map<string, IPublicFeedMessage>();
+
+  // Add existing items that satisfy 24h retention
+  for (const m of existing) {
+    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
+      messageMap.set(m.id, m);
+    }
+  }
+
+  // Merge incoming items
+  for (const m of incoming) {
+    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
+      messageMap.set(m.id, m);
+    }
+  }
+
+  // Sort descending: newest at index 0
+  const sorted = Array.from(messageMap.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  return sorted.length > MAX_FEED_MESSAGES ? sorted.slice(0, MAX_FEED_MESSAGES) : sorted;
+}
+
+/**
+ * Deterministically merges direct chat messages by createdAt timestamp (oldest first).
+ */
+function mergeDirectMessages(
+  existing: IPublicDirectMessage[],
+  incoming: IPublicDirectMessage[]
+): IPublicDirectMessage[] {
+  const cutoff24h = Date.now() - FEED_TTL_MS;
+  const messageMap = new Map<string, IPublicDirectMessage>();
+
+  for (const m of existing) {
+    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
+      messageMap.set(m.id, m);
+    }
+  }
+
+  for (const m of incoming) {
+    if (m && m.id && new Date(m.createdAt).getTime() >= cutoff24h) {
+      messageMap.set(m.id, m);
+    }
+  }
+
+  // Sort ascending: oldest to newest
+  const sorted = Array.from(messageMap.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  return sorted.length > MAX_DIRECT_MESSAGES ? sorted.slice(-MAX_DIRECT_MESSAGES) : sorted;
+}
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -60,6 +128,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [activeDirectChatUser, setActiveDirectChatUser] = useState<IPublicNearbyUser | null>(null);
   const [directMessages, setDirectMessages] = useState<IPublicDirectMessage[]>([]);
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const [isDirectLoading, setIsDirectLoading] = useState(false);
+
+  // Anti-race sequence tracking
+  const feedFetchSeqRef = useRef<number>(0);
+  const directChatSeqRef = useRef<number>(0);
+  const activeUserRef = useRef<IPublicNearbyUser | null>(null);
+  activeUserRef.current = activeDirectChatUser;
+
+  // Full clean-up on user logout to prevent cross-account state leakage
+  useEffect(() => {
+    if (!user) {
+      setFeedMessages([]);
+      setNearbyUsers([]);
+      setTotalNearbyCount(0);
+      setActiveDirectChatUser(null);
+      setDirectMessages([]);
+      setTimedOutUsers({});
+      setIsTimedOut(false);
+      setSocketError(null);
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    }
+  }, [user]);
 
   // Countdown timer for active timeout & pruning expired timedOutUsers
   useEffect(() => {
@@ -98,6 +191,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [timeoutEndsAt]);
 
+  // Feed sync helper with anti-race sequence guard
+  const syncNearbyFeed = useCallback(async (lat: number, lng: number, rad: number) => {
+    const seq = ++feedFetchSeqRef.current;
+    try {
+      const res = await ApiService.getNearbyFeed(lat, lng, rad);
+      if (seq === feedFetchSeqRef.current && res && res.data && Array.isArray(res.data.messages)) {
+        setFeedMessages((prev) => mergeFeedMessages(prev, res.data.messages));
+      }
+    } catch (err) {
+      console.warn('Feed sync error:', err);
+    }
+  }, []);
+
+  const refreshFeed = useCallback(async () => {
+    if (location.latitude !== null && location.longitude !== null) {
+      await syncNearbyFeed(location.latitude, location.longitude, location.radiusKm);
+    }
+  }, [location.latitude, location.longitude, location.radiusKm, syncNearbyFeed]);
+
   // Connect socket with robust auto-reconnection and network listeners
   useEffect(() => {
     if (!user) return;
@@ -121,99 +233,55 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on('connect', () => {
       setIsConnected(true);
       setConnectionStatus('connected');
-      // Immediately resend location on connection/reconnection
+
+      // Immediately sync location on connection/reconnection
       if (location.latitude !== null && location.longitude !== null) {
         socket.emit('location:update', {
           latitude: location.latitude,
           longitude: location.longitude,
           radiusKm: location.radiusKm,
         });
+        syncNearbyFeed(location.latitude, location.longitude, location.radiusKm);
       }
     });
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', () => {
       setIsConnected(false);
-      if (!navigator.onLine) {
-        setConnectionStatus('offline');
-      } else {
-        setConnectionStatus('disconnected');
-      }
-    });
-
-    socket.io.on('reconnect_attempt', () => {
-      if (navigator.onLine) {
-        setConnectionStatus('connecting');
-      }
+      setConnectionStatus(navigator.onLine ? 'disconnected' : 'offline');
     });
 
     socket.io.on('reconnect', () => {
       setIsConnected(true);
       setConnectionStatus('connected');
-    });
-
-    socket.io.on('reconnect_error', () => {
-      if (!navigator.onLine) {
-        setConnectionStatus('offline');
-      } else {
-        setConnectionStatus('disconnected');
+      if (location.latitude !== null && location.longitude !== null) {
+        socket.emit('location:update', {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          radiusKm: location.radiusKm,
+        });
+        syncNearbyFeed(location.latitude, location.longitude, location.radiusKm);
+      }
+      // Re-sync direct chat if currently viewing one
+      if (activeUserRef.current) {
+        ApiService.getChatHistory(activeUserRef.current.anonymousId)
+          .then((res) => {
+            if (res && res.data && Array.isArray(res.data)) {
+              setDirectMessages((prev) => mergeDirectMessages(prev, res.data));
+            }
+          })
+          .catch(() => {});
       }
     });
 
-    // Handle device network online / offline transitions (e.g. WiFi -> 4G switch)
-    const handleOnline = () => {
-      setConnectionStatus('connecting');
-      if (!socket.connected) {
-        socket.connect();
-      }
-    };
-
-    const handleOffline = () => {
-      setConnectionStatus('offline');
-      setIsConnected(false);
-    };
-
-    // Handle mobile screen unlock / tab focus
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !socket.connected) {
-        setConnectionStatus('connecting');
-        socket.connect();
-      }
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
+    // Realtime incoming feed message
     socket.on('feed:received', (message: IPublicFeedMessage) => {
-      const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
-      const msgTime = new Date(message.createdAt).getTime();
-      if (msgTime < cutoff24h) return;
-
-      setFeedMessages((prev) => {
-        // Prevent duplicate messages & keep bounded memory window
-        if (prev.some((m) => m.id === message.id)) return prev;
-        const next = [message, ...prev].filter(
-          (m) => new Date(m.createdAt).getTime() >= cutoff24h
-        );
-        return next.length > 200 ? next.slice(0, 200) : next;
-      });
+      setFeedMessages((prev) => mergeFeedMessages(prev, [message]));
     });
 
+    // Bulk feed history received over socket
     socket.on('feed:history', (data: { messages: IPublicFeedMessage[] }) => {
       if (data && Array.isArray(data.messages)) {
-        const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
-        setFeedMessages((prev) => {
-          const map = new Map<string, IPublicFeedMessage>();
-          prev.forEach((m) => map.set(m.id, m));
-          data.messages.forEach((m) => {
-            if (new Date(m.createdAt).getTime() >= cutoff24h) {
-              map.set(m.id, m);
-            }
-          });
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-        });
+        setFeedMessages((prev) => mergeFeedMessages(prev, data.messages));
       }
     });
 
@@ -234,12 +302,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     socket.on('direct:received', (msg: IPublicDirectMessage) => {
-      setDirectMessages((prev) => {
-        const next = [...prev, msg];
-        return next.length > 100 ? next.slice(-100) : next;
-      });
+      // Only append if the message belongs to the current conversation
+      if (
+        activeUserRef.current &&
+        (msg.senderAnonymousId === activeUserRef.current.anonymousId ||
+          msg.recipientAnonymousId === activeUserRef.current.anonymousId)
+      ) {
+        setDirectMessages((prev) => mergeDirectMessages(prev, [msg]));
+      }
     });
-
 
     socket.on('orbit:user_timeout', (data: { anonymousId: string; alias: string; timeoutMinutes: number; timeoutUntil: number; reason?: string }) => {
       setTimedOutUsers((prev) => ({
@@ -270,49 +341,43 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on('socket:error', handleIncomingError);
     socket.on('error', handleIncomingError);
 
+    // Network listeners
+    const handleOnline = () => {
+      setConnectionStatus('connecting');
+      if (!socket.connected) socket.connect();
+    };
+
+    const handleOffline = () => {
+      setConnectionStatus('offline');
+      setIsConnected(false);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !socket.connected) {
+        setConnectionStatus('connecting');
+        socket.connect();
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       socket.disconnect();
     };
-  }, [user]);
+  }, [user, syncNearbyFeed]);
 
-  // Fetch persistent 24-hour feed history whenever location is ready or refreshed
+  // Initial feed sync whenever location is ready/changed
   useEffect(() => {
     if (!user || location.latitude === null || location.longitude === null) return;
+    syncNearbyFeed(location.latitude, location.longitude, location.radiusKm);
+  }, [user, location.latitude, location.longitude, location.radiusKm, syncNearbyFeed]);
 
-    let isMounted = true;
-    ApiService.getNearbyFeed(location.latitude, location.longitude, location.radiusKm)
-      .then((res) => {
-        if (isMounted && res && res.data && Array.isArray(res.data.messages)) {
-          const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
-          setFeedMessages((prev) => {
-            const map = new Map<string, IPublicFeedMessage>();
-            // Add existing state items first
-            prev.forEach((m) => map.set(m.id, m));
-            // Add API items
-            res.data.messages.forEach((m: IPublicFeedMessage) => {
-              if (new Date(m.createdAt).getTime() >= cutoff24h) {
-                map.set(m.id, m);
-              }
-            });
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-          });
-        }
-      })
-      .catch((err) => {
-        console.warn('Initial feed fetch error:', err);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user, location.latitude, location.longitude, location.radiusKm]);
-
-  // Sync location changes over socket
+  // Sync location changes over active socket
   useEffect(() => {
     if (socketRef.current && socketRef.current.connected) {
       if (location.latitude !== null && location.longitude !== null) {
@@ -338,28 +403,37 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketRef.current.emit('feed:send', { content, replyTo });
   };
 
-  const openDirectChat = (targetUser: IPublicNearbyUser) => {
+  const openDirectChat = useCallback((targetUser: IPublicNearbyUser) => {
+    const seq = ++directChatSeqRef.current;
     setActiveDirectChatUser(targetUser);
     setDirectMessages([]);
     setIsPartnerTyping(false);
+    setIsDirectLoading(true);
 
-    // Fetch persistent direct chat history with this user
     ApiService.getChatHistory(targetUser.anonymousId)
       .then((res) => {
-        if (res && res.data && Array.isArray(res.data)) {
+        // Only update state if user is still on this conversation
+        if (seq === directChatSeqRef.current && res && res.data && Array.isArray(res.data)) {
           setDirectMessages(res.data);
         }
       })
       .catch((err) => {
         console.warn('Direct chat history fetch error:', err);
+      })
+      .finally(() => {
+        if (seq === directChatSeqRef.current) {
+          setIsDirectLoading(false);
+        }
       });
-  };
+  }, []);
 
-  const closeDirectChat = () => {
+  const closeDirectChat = useCallback(() => {
+    directChatSeqRef.current++;
     setActiveDirectChatUser(null);
     setDirectMessages([]);
     setIsPartnerTyping(false);
-  };
+    setIsDirectLoading(false);
+  }, []);
 
   const sendDirectMessage = (content: string) => {
     if (!socketRef.current || !activeDirectChatUser) return;
@@ -407,6 +481,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         activeDirectChatUser,
         directMessages,
         isPartnerTyping,
+        isDirectLoading,
         socketError,
         isTimedOut,
         timeoutRemainingSec,
@@ -420,6 +495,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         setTyping,
         removeMessageFromView,
         removeUserFromNearby,
+        refreshFeed,
       }}
     >
       {children}

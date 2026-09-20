@@ -16,8 +16,9 @@ const DirectMessageSchema = new Schema<IDirectMessageDocument>(
     clientMessageId: { type: String, sparse: true, index: true },
     content: { type: String, required: true, maxlength: 1000 },
     isRead: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
   },
-  { timestamps: true }
+  { timestamps: { createdAt: false, updatedAt: true } }
 );
 
 DirectMessageSchema.index({ senderAnonymousId: 1, recipientAnonymousId: 1, createdAt: -1 });
