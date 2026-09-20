@@ -58,5 +58,6 @@ export interface LocationState {
   cityName?: string;
   source?: 'gps' | 'cached' | 'mock' | 'none';
   cachedTimestamp?: number;
+  permissionStatus?: 'prompt' | 'granted' | 'denied' | 'unsupported';
 }
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { MinimalChatView } from '../../components/minimal/MinimalChatView';
+import { LocationBanner } from '../../components/minimal/LocationBanner';
 import { IMessageItem } from '../../components/minimal/types';
 import { SettingsModal } from '../../components/minimal/SettingsModal';
 import { InviteModal } from '../../components/minimal/InviteModal';
@@ -24,6 +25,7 @@ export default function HomePage() {
     timeoutRemainingSec,
     isUserTimedOut,
     connectionStatus,
+    refreshFeed,
   } = useSocket();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -140,6 +142,7 @@ export default function HomePage() {
   return (
     <div className="h-[100dvh] w-full bg-[#080B10] text-[#F0F4F8] flex flex-col overflow-hidden select-none">
       <div className="flex-1 flex flex-col h-full overflow-hidden max-w-4xl w-full mx-auto">
+        <LocationBanner onLocationReady={refreshFeed} />
         <MinimalChatView
           headerTitle="AnymChat"
           onlineCount={onlineCount}

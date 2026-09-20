@@ -60,6 +60,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
               cityName: parsed.cityName || 'Cached Location',
               source: (parsed.source as any) || 'cached',
               cachedTimestamp: parsed.timestamp,
+              permissionStatus: 'granted',
             };
           } else {
             // Clean expired or malformed cache
@@ -80,6 +81,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       error: null,
       cityName: undefined,
       source: 'none',
+      permissionStatus: 'prompt',
     };
   });
 
@@ -122,6 +124,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         error: 'Geolocation is not supported by your browser.',
         isDetecting: false,
+        permissionStatus: 'unsupported',
       }));
       return;
     }
@@ -129,43 +132,67 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     const currentSeq = ++locationSeqRef.current;
     setLocation((prev) => ({ ...prev, isDetecting: true, error: null }));
 
+    // Helper for successful location resolution
+    const handleSuccess = (pos: GeolocationPosition, isRefinement = false) => {
+      if (currentSeq !== locationSeqRef.current) return;
+
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+
+      setLocation((prev) => ({
+        ...prev,
+        latitude: lat,
+        longitude: lng,
+        isAllowed: true,
+        isDetecting: false,
+        error: null,
+        cityName: isRefinement ? prev.cityName || 'Your Exact Location' : 'Your Nearby Area',
+        source: 'gps',
+        cachedTimestamp: Date.now(),
+        permissionStatus: 'granted',
+      }));
+
+      saveLocationHint(lat, lng, location.radiusKm, 'Your Current Location', 'gps');
+      syncBackend(lat, lng, location.radiusKm);
+
+      // If initial fast resolution, trigger background high accuracy refinement
+      if (!isRefinement && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (highAccPos) => handleSuccess(highAccPos, true),
+          () => {
+            /* Keep existing standard accuracy */
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+        );
+      }
+    };
+
+    // Phase 1: Fast standard accuracy first (Optimized for iOS Safari & cellular connections)
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        // Prevent race if newer location call started
-        if (currentSeq !== locationSeqRef.current) return;
-
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-
-        setLocation((prev) => ({
-          ...prev,
-          latitude: lat,
-          longitude: lng,
-          isAllowed: true,
-          isDetecting: false,
-          error: null,
-          cityName: 'Your Current Device GPS',
-          source: 'gps',
-          cachedTimestamp: Date.now(),
-        }));
-
-        saveLocationHint(lat, lng, location.radiusKm, 'Your Current Device GPS', 'gps');
-        syncBackend(lat, lng, location.radiusKm);
-      },
+      (pos) => handleSuccess(pos, false),
       (err) => {
         if (currentSeq !== locationSeqRef.current) return;
 
-        let msg = 'Location permission denied. Please allow location to view 10km nearby users.';
-        if (err.code === err.TIMEOUT) msg = 'Location request timed out.';
+        let msg = 'Location permission denied. Please enable location to connect with users within 10 km.';
+        let permStatus: 'denied' | 'prompt' = 'denied';
+
+        if (err.code === err.TIMEOUT) {
+          msg = 'Location request timed out. Please tap Allow or select a nearby city preset.';
+          permStatus = 'prompt';
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          msg = 'Location unavailable. Select a city preset below to join.';
+          permStatus = 'prompt';
+        }
 
         setLocation((prev) => ({
           ...prev,
           isAllowed: prev.latitude !== null,
           isDetecting: false,
           error: prev.latitude !== null ? null : msg,
+          permissionStatus: prev.latitude !== null ? prev.permissionStatus : permStatus,
         }));
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
     );
   }, [location.radiusKm, saveLocationHint, syncBackend]);
 
@@ -192,14 +219,40 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       cityName,
       source: 'mock',
       cachedTimestamp: Date.now(),
+      permissionStatus: 'granted',
     }));
     syncBackend(lat, lng, location.radiusKm);
   };
 
-  // Auto-request location when component mounts
+  // Passive initial check: If browser permissions API reports granted, request automatically;
+  // otherwise wait for user gesture to comply with iOS Safari security model.
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    if (typeof window !== 'undefined' && navigator?.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((status) => {
+          if (status.state === 'granted') {
+            requestLocation();
+          } else if (status.state === 'denied') {
+            setLocation((prev) => ({
+              ...prev,
+              permissionStatus: 'denied',
+            }));
+          }
+        })
+        .catch(() => {
+          // Fallback if permissions query fails
+          if (location.latitude === null) {
+            requestLocation();
+          }
+        });
+    } else {
+      // Direct request for browsers without Permissions API
+      if (location.latitude === null) {
+        requestLocation();
+      }
+    }
+  }, []);
 
   return (
     <LocationContext.Provider
